@@ -25,8 +25,6 @@
 </p>
 
 
-Code is coming soon
-
 
 ## Abstract
 
