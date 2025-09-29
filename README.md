@@ -20,7 +20,7 @@
 
 <p align="center">
   <a>
-    <img src="https://img.shields.io/badge/Project%20Page-blue.svg" alt="Project Page" height="22">
+    <img src="https://img.shields.io/badge/Project%20Page-blue.svg" alt="Arxiv" height="22">
   </a>
 </p>
 </div>
