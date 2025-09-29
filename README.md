@@ -37,8 +37,7 @@ Segmenting 3D objects into parts is a long-standing challenge in computer vision
 
 ## TODO
 - [ ] Release inference code of PartSAM
-- [ ] Realse the pre-trained models.
-- [ ] Release the training code of PartSAM
+- [ ] Realse the pre-trained models
 
 ## Citation
 
