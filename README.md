@@ -24,7 +24,6 @@
   <img src="assets/teaser.png" alt="teaser">
 </p>
 
-<div align="center">
 
 Code is coming soon
 
