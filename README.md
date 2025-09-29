@@ -18,5 +18,10 @@
 <sup>5</sup> Lingnan University
 <sup>6</sup> Macau University of Science and Technology
 
-
 </div>
+
+<p align="center">
+  <img src="assets/teaser.png" alt="teaser">
+</p>
+
+<div align="center">
