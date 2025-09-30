@@ -18,9 +18,13 @@
 <sup>5</sup> Lingnan University
 <sup>6</sup> Macau University of Science and Technology
 
+
 <p align="center">
-  <a>
-    <img src="https://img.shields.io/badge/Project%20Page-blue.svg" alt="Arxiv" height="22">
+  <a href="https://czvvd.github.io/PartSAMPage/">
+    <img src="https://img.shields.io/badge/Project%20Page-blue.svg" alt="Project Page" height="22">
+  </a>
+  <a href="https://arxiv.org/abs/2509.21965">
+      <img src="https://img.shields.io/badge/arXiv-b31b1b.svg?logo=arXiv&logoColor=white" alt="arXiv height="22">
   </a>
 </p>
 </div>
