@@ -1,0 +1,24 @@
+_target_: PartSAM.model.pc_sam.PartSAM
+pc_encoder:
+  _target_: PartSAM.model.pc_encoder.PFEncoderDual
+  patch_embed:
+    _target_: PartSAM.model.pc_encoder.PatchEmbed
+    in_channels: 451
+    out_channels: 448  # compatible with unit3d-l
+    num_patches: 2000
+    patch_size: 16
+mask_encoder:
+  _target_: PartSAM.model.prompt_encoder.MaskEncoder
+  embed_dim: 256
+mask_decoder:
+  _target_: PartSAM.model.mask_decoder.MaskDecoder
+  num_multimask_outputs: 3
+  transformer_dim: 256
+  embedding_input_dim: 448
+  transformer:
+    _target_: PartSAM.model.transformer.TwoWayTransformer
+    depth: 4
+    embedding_dim: 256
+    num_heads: 8
+    mlp_dim: 2048
+prompt_iters: 7

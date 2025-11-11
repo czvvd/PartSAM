@@ -1,0 +1,47 @@
+defaults:
+  - model: PartSAM
+  - loss: default
+  - _self_
+
+# Global variables
+num_samples: 10000
+
+num_points: 100000
+
+# For 24GB GPU
+train_dataloader:
+  batch_size: 1
+  num_workers: 2
+  shuffle: True
+  drop_last: True
+ 
+val_freq: 1
+val_freq_step: 500
+val_dataloader:
+  batch_size: 1
+  num_workers: 2
+  shuffle: False
+  drop_last: False
+
+lr: 5e-5
+weight_decay: 1e-4
+max_grad_value: 1.0
+gradient_accumulation_steps: 1
+save_freq: 1
+
+scheduler:
+  _target_: pc_sam.optim.WarmupMultiStepLR
+  milestones: [120000,155000,200000]
+  warmup_iters: 50
+  warmup_factor: 0.001
+  gamma: 0.5
+
+pretrained_ckpt_path: ./pretrained/uni3d-b/model.pt
+ckpt_path: ./pretrained/uni3d-b/model.pt
+max_epochs: 50000
+max_steps: 5000000
+
+# Logging
+run_name: PartSAM9
+project_dir: "./logs/${run_name}"
+log_with: wandb
