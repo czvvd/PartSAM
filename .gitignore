@@ -1,0 +1,11 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+
+# Pretrained models and checkpoints
+pretrained/
+*.ckpt
+*.pth
+*.pt
+*.safetensors
+*.onnx
