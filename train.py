@@ -77,7 +77,7 @@ def initialize_from_partfield(cfg: DictConfig, model: torch.nn.Module) -> None:
 @hydra.main(
     version_base=None,
     config_path="configs",
-    config_name="train_objaverse_demo",
+    config_name="train",
 )
 def main(cfg: DictConfig) -> None:
     OmegaConf.resolve(cfg)

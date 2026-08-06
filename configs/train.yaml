@@ -7,7 +7,6 @@ seed: 83
 
 data:
   root: data/objaverse
-  # Set this to data/partfield_labels for final training.
   pseudo_root: null
   num_points: 100000
   min_part_ratio: 0.003
@@ -34,7 +33,7 @@ scheduler:
   gamma: 0.7
 
 checkpoint:
-  output_dir: outputs/objaverse-demo
+  output_dir: outputs/train
   save_every_steps: 10
   keep_last: 2
 
