@@ -6,7 +6,7 @@ This repository contains code under multiple licenses.
 
 Unless otherwise noted below or in an individual file, code originally authored for PartSAM is licensed under the MIT License. See [LICENSES/MIT.txt](LICENSES/MIT.txt).
 
-## NVIDIA PartField-derived code
+## PartField code
 
 Code under `partfield/` that originates from or is adapted from [NVIDIA PartField](https://github.com/nv-tlabs/PartField), including files carrying NVIDIA copyright notices, is redistributed under the NVIDIA License by its respective copyright holders. See [LICENSES/NVIDIA-PartField.txt](LICENSES/NVIDIA-PartField.txt). Inclusion of this license does not imply affiliation with or endorsement by NVIDIA.
 

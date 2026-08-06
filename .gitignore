@@ -9,3 +9,21 @@ pretrained/
 *.pt
 *.safetensors
 *.onnx
+*.bin
+
+# User-supplied training data and generated pseudo labels
+data/objaverse/
+data/partfield_labels/
+
+# Local training outputs and experiment logs
+outputs/
+wandb/
+runs/
+logs/
+results/
+*.log
+.pytest_cache/
+.hydra/
+multirun/
+.venv/
+.DS_Store

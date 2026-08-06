@@ -8,40 +8,13 @@ from timm.models.eva import Eva
 from timm.models.vision_transformer import VisionTransformer
 
 from .common import KNNGrouper, NNGrouper, PatchEncoder
+from .partfield_init import PartFieldDualInitializationMixin
 
 from partfield.model.UNet.model import ResidualUNet3D
 from partfield.model.triplane import TriplaneTransformer, get_grid_coord 
 from partfield.model.model_utils import VanillaMLP
 from partfield.model.PVCNN.encoder_pc import TriPlanePC2Encoder, sample_triplane_feat
 import numpy as np
-
-def smart_load_state_dict(model, pretrained_dict):
-    model_dict = model.state_dict()
-    
-    # 1. 过滤掉维度不匹配的权重
-    matched_dict = {
-        k: v for k, v in pretrained_dict.items() 
-        if k in model_dict and v.shape == model_dict[k].shape
-    }
-    
-    # 2. 记录不匹配的键（调试用）
-    missing_keys = [k for k in pretrained_dict if k not in model_dict]
-    shape_mismatch_keys = [
-        k for k in pretrained_dict 
-        if k in model_dict and pretrained_dict[k].shape != model_dict[k].shape
-    ]
-    
-    # 3. 加载匹配的权重
-    model.load_state_dict(matched_dict, strict=False)
-    
-    # 打印调试信息
-    print(f"Successfully loaded {len(matched_dict)}/{len(pretrained_dict)} parameters")
-    if missing_keys:
-        print(f"Missing keys (ignored): {missing_keys}")
-    if shape_mismatch_keys:
-        print(f"Shape mismatch keys (ignored): {shape_mismatch_keys}")
-    
-    return model
     
 class PatchEmbed(nn.Module):
     def __init__(
@@ -114,23 +87,34 @@ class PatchDropout(nn.Module):
         return x
 
 
-class PFEncoderDual(nn.Module):
+class PFEncoderDual(PartFieldDualInitializationMixin, nn.Module):
     def __init__(
         self,
-        patch_embed: PatchEmbed
+        patch_embed: PatchEmbed,
+        triplane_resolution: int = 128,
+        initialization_device=None,
     ):
         super().__init__()
         # Patch embedding
         self.patch_embed = patch_embed
 
         # Transformer encoder
-        self.partfield = PartField()
-        self.partfieldMy = PartFieldPath()
+        self.partfield = PartField(
+            triplane_resolution=triplane_resolution,
+            initialization_device=initialization_device,
+        )
+        self.partfieldMy = PartFieldPath(
+            triplane_resolution=triplane_resolution,
+            initialization_device=initialization_device,
+        )
+        self.partfield.requires_grad_(False)
+        self.partfield.eval()
 
 
     def forward(self, coords, color, normal,only_pf=False):
         # Get triplane features
-        planes1 = self.partfield(coords)
+        with torch.no_grad():
+            planes1 = self.partfield(coords)
         planes2 = self.partfieldMy(coords, color, normal)
         if only_pf:
             planes = planes1
@@ -153,16 +137,23 @@ class PFEncoderDual(nn.Module):
 
 class PartField(nn.Module):
     def __init__(
-        self
+        self,
+        triplane_resolution: int = 128,
+        initialization_device=None,
     ):
         super().__init__()
+        if triplane_resolution != 128:
+            raise ValueError(
+                "the public PartField Objaverse checkpoint requires "
+                "triplane_resolution=128"
+            )
 
         # Transformer encoder
         self.pvcnn = TriPlanePC2Encoder(
                 point_encoder_type='pvcnn',
                 z_triplane_channels=256,
-                z_triplane_resolution=128,
-                device="cuda",
+                z_triplane_resolution=triplane_resolution,
+                device=initialization_device,
                 shape_min=-1, 
                 shape_length=2,
                 use_2d_feat=False,
@@ -172,8 +163,8 @@ class PartField(nn.Module):
             transformer_dim=1024,
             transformer_layers=6,
             transformer_heads=8,
-            triplane_low_res=32,
-            triplane_high_res=128,
+            triplane_low_res=triplane_resolution // 4,
+            triplane_high_res=triplane_resolution,
             triplane_dim=512,
         )
 
@@ -189,16 +180,23 @@ class PartField(nn.Module):
     
 class PartFieldPath(nn.Module):
     def __init__(
-        self
+        self,
+        triplane_resolution: int = 128,
+        initialization_device=None,
     ):
         super().__init__()
+        if triplane_resolution != 128:
+            raise ValueError(
+                "the public PartField Objaverse checkpoint requires "
+                "triplane_resolution=128"
+            )
 
         # Transformer encoder
         self.pvcnn = TriPlanePC2Encoder(
                 point_encoder_type='pvcnn',
                 z_triplane_channels=256,
-                z_triplane_resolution=128,
-                device="cuda",
+                z_triplane_resolution=triplane_resolution,
+                device=initialization_device,
                 shape_min=-1, 
                 shape_length=2,
                 use_2d_feat=False,
@@ -208,8 +206,8 @@ class PartFieldPath(nn.Module):
             transformer_dim=1024,
             transformer_layers=6,
             transformer_heads=8,
-            triplane_low_res=32,
-            triplane_high_res=128,
+            triplane_low_res=triplane_resolution // 4,
+            triplane_high_res=triplane_resolution,
             triplane_dim=512,
         )
 
@@ -317,4 +315,3 @@ class PatchEmbedHier(nn.Module):
         patches2["embeddings"] = x2
 
         return [patches1, patches2]
-

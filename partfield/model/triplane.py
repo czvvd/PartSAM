@@ -42,7 +42,7 @@ def sample_from_planes(plane_features, coordinates, mode='bilinear', padding_mod
                                 [0, 1, 0]],
                                 [[0, 0, 1],
                                 [0, 1, 0],
-                                [1, 0, 0]]], dtype=torch.float32).cuda()
+                                [1, 0, 0]]], dtype=torch.float32, device=coordinates.device)
     
     assert padding_mode == 'zeros'
     N, n_planes, C, H, W = plane_features.shape
@@ -330,7 +330,6 @@ class TriplaneTransformer(nn.Module):
         triplanes = triplanes.permute(0, 1, 4, 2, 3).contiguous()
         planes = triplanes + residual
         return planes
-
 
 
 

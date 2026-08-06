@@ -284,6 +284,244 @@ def repeat_interleave(x: torch.Tensor, repeats: int, dim: int):
     x = x.unsqueeze(dim + 1).expand(shape).flatten(dim, dim + 1)
     return x
 
+
+def _validate_mask_sampling_inputs(
+    points: torch.Tensor, gt_masks: torch.Tensor
+) -> tuple[int, int, int]:
+    if points.ndim != 3 or points.shape[-1] != 3:
+        raise ValueError(f"points must have shape [B, N, 3], got {tuple(points.shape)}")
+    if gt_masks.ndim != 3:
+        raise ValueError(
+            f"gt_masks must have shape [B, M, N], got {tuple(gt_masks.shape)}"
+        )
+    if gt_masks.dtype != torch.bool:
+        raise TypeError(f"gt_masks must be boolean, got {gt_masks.dtype}")
+    batch_size, num_points, _ = points.shape
+    if gt_masks.shape[0] != batch_size or gt_masks.shape[2] != num_points:
+        raise ValueError(
+            "points and gt_masks must share batch and point dimensions, got "
+            f"{tuple(points.shape)} and {tuple(gt_masks.shape)}"
+        )
+    if gt_masks.shape[1] == 0:
+        raise ValueError("gt_masks must contain at least one target mask")
+    return batch_size, gt_masks.shape[1], num_points
+
+
+def _minimum_squared_distances(
+    query: torch.Tensor, reference: torch.Tensor
+) -> torch.Tensor:
+    """Return each query point's squared distance to its nearest reference point."""
+    if query.is_cuda and reference.is_cuda:
+        distances, _ = chamfer_distance(query[None], reference[None])
+        return distances[0]
+
+    # The CUDA extension used by the full model does not have a CPU kernel.  This
+    # path keeps the sampling utilities usable in lightweight CPU tests and tools.
+    max_pairs = 4_000_000
+    chunk_size = max(1, max_pairs // max(1, reference.shape[0]))
+    chunks = []
+    for start in range(0, query.shape[0], chunk_size):
+        distances = torch.cdist(query[start : start + chunk_size], reference)
+        chunks.append(distances.square().amin(dim=1))
+    return torch.cat(chunks, dim=0)
+
+
+def _deepest_region_point(
+    coords: torch.Tensor, region: torch.Tensor
+) -> tuple[Union[torch.Tensor, None], Union[torch.Tensor, None]]:
+    region_indices = torch.nonzero(region, as_tuple=False).flatten()
+    if region_indices.numel() == 0:
+        return None, None
+
+    outside_indices = torch.nonzero(~region, as_tuple=False).flatten()
+    if outside_indices.numel() == 0:
+        return region_indices[0], coords.new_tensor(float("inf"))
+
+    min_distances = _minimum_squared_distances(
+        coords[region_indices], coords[outside_indices]
+    )
+    deepest_offset = torch.argmax(min_distances)
+    return region_indices[deepest_offset], min_distances[deepest_offset]
+
+
+@torch.no_grad()
+def sample_interaction_prompts(
+    points: torch.Tensor,
+    gt_masks: torch.Tensor,
+    pred_logits: Union[torch.Tensor, None],
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Choose one deterministic SAM-style click for every target mask.
+
+    The initial click is the point deepest inside the ground-truth foreground.
+    Later clicks compare the deepest false-negative and false-positive error
+    regions.  A false negative yields a positive click and a false positive a
+    negative click.  Perfect predictions fall back to the initial click.
+
+    Adapted from Point-SAM (BAAI-Vision), MIT; see ``LICENSES/Point-SAM.txt``.
+    """
+    batch_size, num_masks, num_points = _validate_mask_sampling_inputs(
+        points, gt_masks
+    )
+    flat_gt_masks = gt_masks.reshape(batch_size * num_masks, num_points)
+
+    if pred_logits is None:
+        flat_predictions = None
+    elif pred_logits.shape == gt_masks.shape:
+        flat_predictions = pred_logits.reshape(batch_size * num_masks, num_points)
+    elif pred_logits.shape == (batch_size * num_masks, num_points):
+        flat_predictions = pred_logits
+    else:
+        raise ValueError(
+            "pred_logits must have shape [B, M, N] or [B*M, N], got "
+            f"{tuple(pred_logits.shape)}"
+        )
+
+    repeated_points = repeat_interleave(points, num_masks, dim=0)
+    prompt_coords = []
+    prompt_labels = []
+    selected_indices = []
+    for target_index, gt_mask in enumerate(flat_gt_masks):
+        if not gt_mask.any():
+            raise ValueError(
+                f"target mask {target_index} has no foreground points"
+            )
+
+        coords = repeated_points[target_index]
+        if flat_predictions is None:
+            selected_index, _ = _deepest_region_point(coords, gt_mask)
+            selected_label = True
+        else:
+            pred_mask = flat_predictions[target_index] > 0
+            false_negative = gt_mask & ~pred_mask
+            false_positive = ~gt_mask & pred_mask
+            positive_index, positive_depth = _deepest_region_point(
+                coords, false_negative
+            )
+            negative_index, negative_depth = _deepest_region_point(
+                coords, false_positive
+            )
+
+            if positive_index is None and negative_index is None:
+                selected_index, _ = _deepest_region_point(coords, gt_mask)
+                selected_label = True
+            elif negative_index is None or (
+                positive_index is not None and positive_depth >= negative_depth
+            ):
+                selected_index = positive_index
+                selected_label = True
+            else:
+                selected_index = negative_index
+                selected_label = False
+
+        prompt_coords.append(coords[selected_index])
+        prompt_labels.append(selected_label)
+        selected_indices.append(selected_index)
+
+    return (
+        torch.stack(prompt_coords).unsqueeze(1),
+        torch.tensor(
+            prompt_labels, dtype=torch.bool, device=gt_masks.device
+        ).unsqueeze(1),
+        torch.stack(selected_indices).to(dtype=torch.long),
+    )
+
+
+@torch.no_grad()
+def sample_triplets(
+    points: torch.Tensor,
+    gt_masks: torch.Tensor,
+    sample_nums: int = 512,
+) -> torch.Tensor | None:
+    """Sample PartField triplets in contiguous ``PA, PB, PC`` groups.
+
+    ``PA`` and ``PB`` are independently sampled foreground points (distinct
+    within a pair when possible). ``PC`` contains background points, half drawn
+    uniformly and half biased toward the mask boundary as in the research code.
+    Sampling uses replacement so small teaching meshes remain supported.
+    """
+    batch_size, num_masks, _ = _validate_mask_sampling_inputs(points, gt_masks)
+    if not isinstance(sample_nums, int) or isinstance(sample_nums, bool):
+        raise TypeError("sample_nums must be an integer")
+    if sample_nums <= 0:
+        raise ValueError("sample_nums must be positive")
+
+    sampled_triplets = []
+    for batch_index in range(batch_size):
+        for mask_index in range(num_masks):
+            mask = gt_masks[batch_index, mask_index]
+            foreground = torch.nonzero(mask, as_tuple=False).flatten()
+            background = torch.nonzero(~mask, as_tuple=False).flatten()
+            if foreground.numel() == 0 or background.numel() == 0:
+                return None
+
+            pa_positions = torch.randint(
+                foreground.numel(), (sample_nums,), device=points.device
+            )
+            if foreground.numel() == 1:
+                pb_positions = pa_positions
+            else:
+                pb_positions = torch.randint(
+                    foreground.numel() - 1,
+                    (sample_nums,),
+                    device=points.device,
+                )
+                pb_positions += (pb_positions >= pa_positions).to(pb_positions.dtype)
+
+            boundary_count = sample_nums // 2
+            random_count = sample_nums - boundary_count
+            random_background = background[
+                torch.randint(
+                    background.numel(), (random_count,), device=points.device
+                )
+            ]
+
+            if boundary_count:
+                background_depth = _minimum_squared_distances(
+                    points[batch_index, background],
+                    points[batch_index, foreground],
+                )
+                boundary_pool_size = min(boundary_count, background.numel())
+                boundary_pool = background[
+                    torch.topk(
+                        background_depth,
+                        boundary_pool_size,
+                        largest=False,
+                        sorted=False,
+                    ).indices
+                ]
+                if boundary_pool.numel() < boundary_count:
+                    padding = boundary_pool[
+                        torch.randint(
+                            boundary_pool.numel(),
+                            (boundary_count - boundary_pool.numel(),),
+                            device=points.device,
+                        )
+                    ]
+                    boundary_background = torch.cat(
+                        [boundary_pool, padding], dim=0
+                    )
+                else:
+                    boundary_background = boundary_pool
+                pc_indices = torch.cat(
+                    [random_background, boundary_background], dim=0
+                )
+            else:
+                pc_indices = random_background
+
+            sampled_triplets.append(
+                torch.cat(
+                    [
+                        points[batch_index, foreground[pa_positions]],
+                        points[batch_index, foreground[pb_positions]],
+                        points[batch_index, pc_indices],
+                    ],
+                    dim=0,
+                )
+            )
+
+    return torch.stack(sampled_triplets, dim=0)
+
+
 @torch.no_grad()
 def sample_prompts_adapter(
     points: torch.Tensor,
@@ -806,4 +1044,3 @@ class PatchEncoder(nn.Module):
         x = self.conv2(x)  # [B, L, K, C_out]
         y = torch.max(x, dim=-2).values  # [B, L, C_out]
         return y
-    

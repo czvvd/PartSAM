@@ -1,6 +1,9 @@
 _target_: PartSAM.model.pc_sam.PartSAM
 pc_encoder:
   _target_: PartSAM.model.pc_encoder.PFEncoderDual
+  # Matches the published PartField Objaverse checkpoint.
+  triplane_resolution: 128
+  initialization_device: null
   patch_embed:
     _target_: PartSAM.model.pc_encoder.PatchEmbed
     in_channels: 451
@@ -21,4 +24,4 @@ mask_decoder:
     embedding_dim: 256
     num_heads: 8
     mlp_dim: 2048
-prompt_iters: 7
+prompt_iters: 10

@@ -1,2 +1,2 @@
-_target_: pc_sam.model.loss.Criterion
+_target_: PartSAM.model.loss.Criterion
 iou_loss_weight : 1.0

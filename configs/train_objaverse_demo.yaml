@@ -1,0 +1,50 @@
+defaults:
+  - model: PartSAM
+  - loss: default
+  - _self_
+
+seed: 83
+
+data:
+  root: data/objaverse
+  # Set this to data/partfield_labels for final training.
+  pseudo_root: null
+  num_points: 100000
+  min_part_ratio: 0.003
+  max_part_ratio: 0.70
+  max_targets: 1
+
+initialization:
+  partfield_checkpoint: pretrained/model_objaverse.ckpt
+
+train:
+  batch_size: 1
+  num_workers: 2
+  max_steps: 10
+  lr: 0.0005
+  weight_decay: 0.00005
+  encoder_lr_scale: 0.2
+  gradient_accumulation_steps: 1
+  max_grad_value: 1.0
+  mixed_precision: bf16
+  resume_from: null
+
+scheduler:
+  step_size: 50000
+  gamma: 0.7
+
+checkpoint:
+  output_dir: outputs/objaverse-demo
+  save_every_steps: 10
+  keep_last: 2
+
+logging:
+  backend: null
+  every_steps: 1
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: .
+  output_subdir: null

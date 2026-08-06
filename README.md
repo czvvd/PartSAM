@@ -6,19 +6,9 @@
 
 <div align="center">
 
-[Zhe Zhu](https://scholar.google.com/citations?user=pM4ebg0AAAAJ&hl=zh-CN)<sup>1</sup>, [Le Wan](https://scholar.google.com/citations?user=pM4ebg0AAAAJ&hl=zh-CN)<sup>2</sup>, [Rui Xu](https://ruixu.me/)<sup>3</sup>, [Yiheng Zhang](https://openreview.net/profile?id=~Yiheng_Zhang4)<sup>4</sup>, [Honghua Chen](https://chenhonghua.github.io/clay.github.io/)<sup>5</sup>, [Zhiyang Dou](https://frank-zy-dou.github.io/)<sup>3</sup>, [Cheng Lin](https://clinplayer.github.io/)<sup>6</sup>, [Yuan Liu](https://liuyuan-pal.github.io/)<sup>2&dagger;</sup>, [Mingqiang Wei](https://scholar.google.com/citations?user=TdrJj8MAAAAJ&hl=en)<sup>1&dagger;</sup>
+[Zhe Zhu](https://scholar.google.com/citations?user=pM4ebg0AAAAJ&hl=zh-CN), [Le Wan](https://scholar.google.com/citations?user=pM4ebg0AAAAJ&hl=zh-CN), [Rui Xu](https://ruixu.me/), [Yiheng Zhang](https://openreview.net/profile?id=~Yiheng_Zhang4), [Honghua Chen](https://chenhonghua.github.io/clay.github.io/), [Zhiyang Dou](https://frank-zy-dou.github.io/), [Cheng Lin](https://clinplayer.github.io/), [Yuan Liu](https://liuyuan-pal.github.io/)<sup>&dagger;</sup>, [Mingqiang Wei](https://scholar.google.com/citations?user=TdrJj8MAAAAJ&hl=en)<sup>&dagger;</sup>
 <br>
 &dagger; Corresponding authors
-
-
-<sup>1</sup> NUAA
-<sup>2</sup> HKUST
-<sup>3</sup> HKU
-<sup>4</sup> NUS
-<sup>5</sup> LU
-<sup>6</sup> MUST
-
-
 <p align="center">
   <a href="https://czvvd.github.io/PartSAMPage/">
     <img src="https://img.shields.io/badge/Project%20Page-blue.svg" alt="Project Page" height="22">
@@ -42,9 +32,9 @@ conda create -n PartSAM python=3.11 -y
 conda activate PartSAM
 # PyTorch 2.4.1 with CUDA 12.4
 pip install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 --index-url https://download.pytorch.org/whl/cu124
-pip install lightning==2.2 h5py yacs trimesh scikit-image loguru boto3
+pip install lightning==2.2 h5py yacs trimesh scikit-image scikit-learn loguru
 pip install mesh2sdf tetgen pymeshlab plyfile einops libigl polyscope potpourri3d simple_parsing arrgh open3d safetensors
-pip install hydra-core omegaconf accelerate timm igraph ninja
+pip install hydra-core omegaconf accelerate torchdata==0.8.0 timm igraph ninja
 pip install torch-scatter -f https://data.pyg.org/whl/torch-2.4.1+cu124.html
 apt install libx11-6 libgl1 libxrender1
 pip install vtk
@@ -67,10 +57,27 @@ huggingface-cli download Czvvd/PartSAM --local-dir ./pretrained
 python evaluation/eval_everypart.py
 ```
 
+## Training
+
+Download Objaverse GLB files to `data/objaverse/`, and place the [PartField checkpoint](https://huggingface.co/mikaelaangel/partfield-ckpt/blob/main/model_objaverse.ckpt) at `pretrained/model_objaverse.ckpt`.
+
+Curate additional training data with:
+
+```bash
+python scripts/curate_partfield_labels.py
+```
+
+Start training:
+
+```bash
+accelerate launch --num_processes 1 train.py \
+  checkpoint.output_dir=outputs/train
+```
+
 ## TODO
 - [x] Release inference code of PartSAM
 - [x] Release the pre-trained models
-- [ ] Release training code and data processing script
+- [x] Release training code and data processing script
 
 ## Acknowledgement
 Our code is based on these wonderful works:

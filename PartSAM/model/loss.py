@@ -150,11 +150,19 @@ class Criterion(nn.Module):
         self.use_soft_iou = use_soft_iou
         self.iou_loss_weight = iou_loss_weight
 
-    def forward(self, outputs: List[Dict[str, torch.Tensor]], gt_masks,step):
+    def forward(
+        self,
+        outputs: List[Dict[str, torch.Tensor]],
+        gt_masks: torch.Tensor,
+        step=None,
+    ):
         # gt_mask: [B*M, N]
         # Follow the "Making the model ambiguity-aware" in Appendix A of SAM.
         # Multimask is only enabled with more than one prompt.
-        losses = []
+        if not outputs:
+            raise ValueError("Criterion requires at least one interaction output")
+        mask_losses = []
+        iou_losses = []
         aux_outputs = []
         for i, output in enumerate(outputs):
             masks = output["masks"]  # [B, M, N]
@@ -162,18 +170,18 @@ class Criterion(nn.Module):
             loss_mask = compute_mask_loss(masks, gt_masks)  # [B*M,C]
             if i == 0:
                 loss_mask, min_loss_idx = loss_mask.min(dim=1)  # [B*M]
-                batch_idx = torch.arange(min_loss_idx.shape[0])
+                batch_idx = torch.arange(
+                    min_loss_idx.shape[0], device=min_loss_idx.device
+                )
                 best_masks = masks[batch_idx, min_loss_idx]  # [B*M, N]
-                
                 iou_preds = iou_preds[batch_idx, min_loss_idx]  # [B*M]
-                
             else:
                 best_masks = masks.squeeze(1)
                 iou_preds = iou_preds.squeeze(1)
             loss_mask = loss_mask.mean()
-            
+
             iou = compute_iou_original(best_masks, gt_masks)  # [B*M]
-            
+
             if self.use_soft_iou:
                 with torch.no_grad():
                     soft_iou = compute_jaccard(
@@ -183,27 +191,30 @@ class Criterion(nn.Module):
             else:
                 loss_iou = F.mse_loss(iou, iou_preds)
 
-            losses.append(loss_iou * self.iou_loss_weight + loss_mask)
-            losses.append(loss_mask)
-                
+            mask_losses.append(loss_mask)
+            iou_losses.append(loss_iou * self.iou_loss_weight)
+
             aux_outputs.append(
                 dict(
                     iou=iou,
                     best_masks=best_masks,
                     loss_mask=loss_mask,
-                    loss_iou=loss_iou
+                    loss_iou=loss_iou,
                 )
             )
 
-        triplets = outputs[0]['triplets']
-        if triplets is not None:
-            contrastLoss,_ = contrast_loss(triplets)
-            losses.append(contrastLoss*0.1)
-            aux_outputs.append(
-                    dict(
-                        contrastLoss = contrastLoss
-                    )
-                )
+        # This is the exact aggregation used by the research training code:
+        # (2 * sum(mask) + sum(iou) + 0.1 * triplet) / (2 * T + 1).
+        numerator = 2.0 * torch.stack(mask_losses).sum()
+        numerator = numerator + torch.stack(iou_losses).sum()
+        denominator = 2 * len(outputs)
 
-        loss = torch.stack(losses).mean()
+        triplets = outputs[0].get("triplets")
+        if triplets is not None:
+            contrast_loss_value, _ = contrast_loss(triplets)
+            numerator = numerator + contrast_loss_value * 0.1
+            denominator += 1
+            aux_outputs.append(dict(contrastLoss=contrast_loss_value))
+
+        loss = numerator / denominator
         return loss, aux_outputs
